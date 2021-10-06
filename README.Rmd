@@ -1,0 +1,167 @@
+---
+title: "Homework 3"
+author: "Robert George"
+date: "10/5/2021"
+output: github_document
+---
+
+# Homework 3
+## Robert George
+
+### Description
+In this project, we looked at three variables that we thought would influence flight delays. The size of the destination airport, the airline carrying the flight, and the distance of the flight were all considered in determining the best time of day to schedule a flight in order to avoid delays. Our findings, however, are somewhat lackluster; we found that regardless of the variable considered, flights in the early morning are consistently more on time. Ultimately, our decision not to consider flight cancellations, for the ease of being able to drop them and look at delay times, may have had a greater influence on our results than we had expected. Given that large airlines and airports are probably more likely to cancel flights, this would lower their overall delay times.
+ 
+```{r, echo = FALSE, warning=FALSE}
+library(nycflights13)
+library(tidyverse)
+library(dplyr)
+library(FSA)
+library(ggsci)
+options(dplyr.summarise.inform = FALSE)
+
+flights = flights
+weather = weather
+airlines = airlines
+airports = airports
+
+
+flights_agg = merge(flights, weather)
+```
+
+### Setting the stage
+
+First, let's take a look at what time of day there are the fewest delays, by aggregating delay times into one variable that represents the overall mean delay time per hour of the day. This way we can see if targeting specific explanatory variables changes the baseline for the best time of day to fly. 
+```{r, echo = FALSE, warning=FALSE}
+flights%>%
+  filter(!is.na(arr_delay), !is.na(dep_delay))%>%
+  group_by(hour)%>%
+  summarise(mean_arr_delay = mean(arr_delay),
+            mean_dep_delay = mean(dep_delay),
+            avg_delay = (mean_arr_delay + mean_dep_delay)/2)%>%
+  arrange(avg_delay)%>%
+  head(5)
+```
+We can see that without manipulating any variables, early morning flights have the shortest delays across the board. Dropping missing values (canceled flights), we see that flights leaving between 5 and 6 AM have the lowest average delay, leaving approximately 2 minutes early on average. To test the impact of certain explanatory variables on the average delay per hour, we will be looking at three factors of flights that would influence delay times. Because delays are often due to logistical importance, situations in which Air Traffic Control have to delay a flight so that another can get off the runway safely, I hypothesize that the busiest airports will boast the longest delays. To test this, I will create a dummy variable coded "Huge" if the destination airport is one of the ten busiest airports in the country, and coded "Small" if it is not. Another major factor that influences flight delays is weather. Because it would be too difficult to filter the dataset by region with only the airport postal codes, I will instead look at airline to determine the impact of weather, due to the fact that certain airlines sponsor flights in specific regions, with Southwest Airlines hosting flights in the most averse geographic conditions. Another good reason to look at the effect of airline choice against delay times is that I expect smaller airlines to have longer delay times, because they have less frequent trips between two different airports, meaning a delayed flight will be delayed substantially longer for a smaller airline. Finally, to investigate further the impact of weather on delays, I will look at flight length, asserting that longer flights have a higher chance of interacting with averse weather. I have no way of testing this, however, because the available weather data is only for the departure airport, which would not have any special effect on a long flight versus a short one.
+
+### Airport size
+
+To begin, we need to create a dummy variable indicating the size of the destination airport. According to https://airadvisor.com, the 10 largest airports in the USA are as follows: DEN, DFW, MCO, IAD, IAH, SLC, ORD, SFO, JFK, DTW. Our dummy variable, airport_size, will be coded "Huge" for these airports and "Small" for all other airports.
+```{r, warning=FALSE}
+big_airports = c("DEN","DFW", "MCO", "IAD", "IAH", "SLC", "ORD", "SFO", "JFK", "DTW")
+flights = flights%>%
+  mutate(airport_size = case_when(dest %in% big_airports ~ "Huge",
+                                  TRUE ~ "Small"))
+
+```
+```{r, echo = FALSE, warning=FALSE}
+flights%>%
+  filter(!is.na(arr_delay), !is.na(dep_delay))%>%
+  group_by(hour, airport_size)%>%
+  summarise(mean_arr_delay = mean(arr_delay),
+            mean_dep_delay = mean(dep_delay),
+            avg_delay = (mean_arr_delay + mean_dep_delay)/2)%>%
+  ggplot(aes(x = hour, y = avg_delay, fill=airport_size, linetype=airport_size))+
+  geom_line()+
+  ggtitle("Average Delay Per Hour by Airport Size")+
+  xlab("Hour")+
+  ylab("Average Delay")+
+  theme_gray()+
+  scale_color_startrek()
+
+flights%>%
+  filter(!is.na(arr_delay), !is.na(dep_delay))%>%
+  group_by(airport_size)%>%
+  summarise(mean_arr_delay = mean(arr_delay),
+            mean_dep_delay = mean(dep_delay),
+            avg_delay = (mean_arr_delay + mean_dep_delay)/2)%>%
+  select(airport_size, avg_delay)
+```
+Early morning flights have the lowest average delays regardless of the size of the airport a plane is departing from or heading to. There does not appear to be much evidence to suggest a relationship between destination airport size and delay times. We could consider that the average delay across all flights going to a huge airport is actually lower than those going to a small airport. Flights between New York and major airports are, obviously, far more frequent than those to regional airports. Therefore, we could explain this by positing that we are not considering cancellations; that flights between large airports are more often cancelled than allowed to delay.
+
+
+### Airline
+
+Next, we will examine the effect of airline carrier on delay times. First we will examine the best times to leave to minimize delays, to see if there is any variation with our original hypothesis. Then, we will investigate whether there is a relationship with general delay times and airline carrier. Finally, we will examine our results and derive conclusions.
+
+```{r, echo = FALSE, warning=FALSE}
+flights%>%
+  filter(!is.na(arr_delay), !is.na(dep_delay))%>%
+  group_by(hour, carrier)%>%
+  summarise(mean_arr_delay = mean(arr_delay),
+            mean_dep_delay = mean(dep_delay),
+            avg_delay = (mean_arr_delay + mean_dep_delay)/2)%>%
+  arrange(avg_delay)%>%
+  ungroup()%>%
+  group_by(carrier)%>%
+  summarize(Time = first(hour), "Lowest average delay" =  first(avg_delay))%>%
+  arrange(Time)
+```
+Most flights with the lowest delays are still morning flights when you group by airline. Regional, small airlines like Hawaiian and Endeavor have lower delays on flights leaving later in the morning. 
+
+```{r, echo = FALSE, warning=FALSE}
+flights%>%
+  filter(!is.na(arr_delay), !is.na(dep_delay))%>%
+  group_by(carrier)%>%
+  summarise(carrier_size = n(),
+            mean_arr_delay = mean(arr_delay),
+            mean_dep_delay = mean(dep_delay),
+            avg_delay = (mean_arr_delay + mean_dep_delay)/2)%>%
+  select(carrier, avg_delay, carrier_size)%>%
+  arrange(avg_delay)%>%
+  mutate(major_airline = case_when(carrier_size > 10000 ~ "Yes",
+                                   TRUE ~ "No"))%>%
+  ggplot(aes(x = carrier, y = avg_delay, fill  = major_airline))+
+  geom_col()+
+  ggtitle("Average Delay by Carrier")+
+  xlab("Airline")+
+  ylab("Average Delay")+
+  theme_gray()+
+  scale_color_startrek()
+```
+
+The longest average delays occur with airlines that are either smaller airlines or are regionally located in the southwest. ExpressJet and Southwest airlines are the two major airlines with the highest delays by far, and both service mostly the southwest of the USA. The other four airlines with the highest delay times are small airlines with under 10,000 completed flights in 2013. This could be explained by the notion that larger airlines have more frequent flights, so they might be more willing to cancel flights and reassign passengers to later flights than smaller airlines who would lose more money cancelling flights.
+
+### Flight Distance
+
+Is there a relationship between flight distance and average delay?
+```{r, echo = FALSE, warning=FALSE}
+flights%>%
+  filter(!is.na(arr_delay), !is.na(dep_delay), distance < 3000)%>%
+  group_by(distance)%>%
+  mutate(avg_delay = (mean(arr_delay) + mean(dep_delay))/2)%>%
+  ggplot(aes(x = distance, y = avg_delay))+
+  geom_point()+
+  geom_smooth()+
+  facet_wrap(~origin)
+```
+It seems that my hypothesis was entirely incorrect. There seems to be a negative relationship between flight distance and average delay, rather than a positive one.
+
+Is there a relationship between time of day and delays, considering flight length? We begin by splitting the flight distances into four quantiles. We create another dummy variable that indicates a long flight for any distance longer than the third quantile of the data, and a short flight for all other flights. We examine the best time of day to leave to avoid delays, faceting for flight length.
+
+```{r, echo = FALSE, warning=FALSE}
+library(stats)
+
+quantile(flights$distance)
+third_quantile = 1389
+
+flights%>%
+  filter(!is.na(arr_delay), !is.na(dep_delay), distance < 3000)%>%
+  mutate(long_flight = case_when(distance > third_quantile ~ "Long flight",
+                                 TRUE ~ "Short Flight"))%>%
+  group_by(hour, long_flight)%>%
+  summarize(hour = first(hour),
+            mean_arr_delay = mean(arr_delay),
+            mean_dep_delay = mean(dep_delay),
+            avg_delay = (mean_arr_delay + mean_dep_delay)/2,
+            long_flight = first(long_flight))%>%
+  ggplot(aes(x = hour, y = avg_delay))+
+  geom_col()+
+  facet_wrap(~long_flight)+
+  ggtitle("Average Delay per Hour by Flight Distance")+
+  xlab("Hour")+
+  ylab("Average Delay")+
+  theme_gray()+
+  scale_color_startrek()
+```
+We can see that the trend of flight delays increasing in time as the day goes on is consistent regardless of the length of the flight. We can see that longer flights actually tend to have shorter delays, however, we have not included information on flight cancellations in any of our calculations. Therefore, we may be omitting an important factor; long flights might get canceled more frequently than short flights, which may just get delayed.
+
